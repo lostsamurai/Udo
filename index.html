@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>swap puzzle · fixed</title>
+    <title>smart grid puzzle · adapts to image</title>
     <style>
         * {
             box-sizing: border-box;
@@ -160,12 +160,8 @@
             display: block;
             width: 100%;
             height: auto;
-            cursor: grab;
+            cursor: pointer;
             background: #bedcff;
-        }
-
-        #puzzleCanvas:active {
-            cursor: grabbing;
         }
 
         .info-bar {
@@ -301,10 +297,10 @@
 
         <div class="info-bar">
             <span class="piece-counter" id="pieceCountDisplay">0 pieces</span>
-            <span>✨ click piece · then click destination</span>
+            <span>✨ grid adapts to image</span>
             <button id="solveBtn" class="btn" style="padding: 6px 18px;">⚡ solve</button>
         </div>
-        <div class="footer-note">⭐ upload starts timer · click two pieces to swap</div>
+        <div class="footer-note">⭐ upload starts timer · tap two pieces to swap</div>
     </div>
 
     <div class="popup-overlay" id="victoryPopup">
@@ -320,10 +316,6 @@
 
     <script>
         (function() {
-            // --- constants ---
-            const COLS = 3;
-            const ROWS = 3;
-
             // DOM elements
             const canvas = document.getElementById('puzzleCanvas');
             const ctx = canvas.getContext('2d');
@@ -341,10 +333,14 @@
 
             // puzzle state
             let pieces = [];
-            let selectedIndex = -1;  // First piece selected for swapping
+            let selectedIndex = -1;
             let canvasWidth = 600, canvasHeight = 480;
             let puzzleImage = null;
             let imageNaturalWidth = 0, imageNaturalHeight = 0;
+            
+            // Grid dimensions - will be calculated based on image orientation
+            let COLS = 3;
+            let ROWS = 3;
 
             // timer
             let timerInterval = null;
@@ -353,6 +349,7 @@
             let puzzleCompleted = false;
 
             const MAX_SCORE = 10000;
+            const TARGET_PIECES = 12; // We want around 12 pieces total
 
             // --- helper: format time ---
             function formatTime(sec) {
@@ -370,7 +367,7 @@
                 scoreDisplay.textContent = `🏆 ${score}`;
             }
 
-            // --- start timer (only when image is uploaded) ---
+            // --- start timer ---
             function startTimer() {
                 if (timerInterval) clearInterval(timerInterval);
                 secondsElapsed = 0;
@@ -385,7 +382,7 @@
                 }, 1000);
             }
 
-            // --- stop timer & show popup (only on real win) ---
+            // --- stop timer & show popup ---
             function completePuzzle() {
                 if (puzzleCompleted) return;
                 timerActive = false;
@@ -403,31 +400,38 @@
                 popupOverlay.style.opacity = 1;
             }
 
-            // --- check if puzzle is solved (all pieces at correct grid positions) ---
-            function isPuzzleSolved() {
-                if (!puzzleImage || pieces.length === 0) return false;
-                const tolerance = 2;
-                for (let p of pieces) {
-                    const correctCol = p.id % COLS;
-                    const correctRow = Math.floor(p.id / COLS);
-                    const correctX = correctCol * (canvasWidth / COLS);
-                    const correctY = correctRow * (canvasHeight / ROWS);
-                    if (Math.abs(p.dx - correctX) > tolerance || Math.abs(p.dy - correctY) > tolerance) {
-                        return false;
-                    }
+            // --- calculate optimal grid based on image aspect ratio ---
+            function calculateGridDimensions(imgWidth, imgHeight) {
+                const aspectRatio = imgWidth / imgHeight;
+                
+                // We want approximately TARGET_PIECES total pieces
+                // For landscape (width > height), more columns than rows
+                // For portrait (height > width), more rows than columns
+                
+                let cols, rows;
+                
+                if (aspectRatio > 1.2) {
+                    // Landscape - more columns
+                    cols = Math.round(Math.sqrt(TARGET_PIECES * aspectRatio));
+                    rows = Math.round(TARGET_PIECES / cols);
+                } else if (aspectRatio < 0.8) {
+                    // Portrait - more rows
+                    rows = Math.round(Math.sqrt(TARGET_PIECES / aspectRatio));
+                    cols = Math.round(TARGET_PIECES / rows);
+                } else {
+                    // Roughly square
+                    cols = Math.round(Math.sqrt(TARGET_PIECES));
+                    rows = cols;
                 }
-                return true;
+                
+                // Ensure at least 2x2 and not too many pieces
+                cols = Math.min(6, Math.max(2, cols));
+                rows = Math.min(6, Math.max(2, rows));
+                
+                return { cols, rows };
             }
 
-            // --- redraw + completion check ---
-            function drawPuzzleAndCheckCompletion() {
-                drawPuzzle();
-                if (!puzzleCompleted && puzzleImage && pieces.length > 0 && isPuzzleSolved()) {
-                    completePuzzle();
-                }
-            }
-
-            // --- resize canvas ---
+            // --- resize canvas to fit container while maintaining aspect ratio ---
             function resizeCanvasToContainer() {
                 const container = document.querySelector('.puzzle-container');
                 const containerWidth = container.clientWidth;
@@ -437,11 +441,16 @@
                 canvas.height = canvasHeight;
             }
 
-            // --- build pieces from image (correct grid positions) ---
+            // --- build pieces from image with dynamic grid ---
             function buildPiecesFromImage() {
                 if (!puzzleImage) return;
                 selectedIndex = -1;
 
+                // Calculate grid dimensions based on image orientation
+                const grid = calculateGridDimensions(imageNaturalWidth, imageNaturalHeight);
+                COLS = grid.cols;
+                ROWS = grid.rows;
+                
                 const pieceSourceWidth = imageNaturalWidth / COLS;
                 const pieceSourceHeight = imageNaturalHeight / ROWS;
                 const targetPieceWidth = canvasWidth / COLS;
@@ -472,7 +481,7 @@
                 if (!puzzleImage || pieces.length === 0) return;
 
                 // Perform multiple random swaps
-                for (let step = 0; step < 20; step++) {
+                for (let step = 0; step < pieces.length * 3; step++) {
                     const i = Math.floor(Math.random() * pieces.length);
                     const j = Math.floor(Math.random() * pieces.length);
                     
@@ -489,7 +498,7 @@
                 drawPuzzleAndCheckCompletion();
             }
 
-            // --- reset to solved (correct cells) ---
+            // --- reset to solved ---
             function resetToSolved() {
                 if (!puzzleImage || pieces.length === 0) return;
                 pieces.forEach(p => {
@@ -502,7 +511,23 @@
                 drawPuzzleAndCheckCompletion();
             }
 
-            // --- draw ---
+            // --- check if puzzle is solved ---
+            function isPuzzleSolved() {
+                if (!puzzleImage || pieces.length === 0) return false;
+                const tolerance = 2;
+                for (let p of pieces) {
+                    const correctCol = p.id % COLS;
+                    const correctRow = Math.floor(p.id / COLS);
+                    const correctX = correctCol * (canvasWidth / COLS);
+                    const correctY = correctRow * (canvasHeight / ROWS);
+                    if (Math.abs(p.dx - correctX) > tolerance || Math.abs(p.dy - correctY) > tolerance) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            // --- draw puzzle ---
             function drawPuzzle() {
                 if (!puzzleImage) {
                     ctx.fillStyle = '#b0d4ff';
@@ -544,7 +569,6 @@
             function drawPiece(p, isSelected) {
                 ctx.drawImage(p.img, p.sx, p.sy, p.sw, p.sh, p.dx, p.dy, p.dw, p.dh);
                 
-                // Highlight if selected
                 if (isSelected) {
                     ctx.strokeStyle = '#ffaa00';
                     ctx.lineWidth = 4;
@@ -560,6 +584,13 @@
                 ctx.strokeRect(p.dx+1, p.dy+1, p.dw-2, p.dh-2);
             }
 
+            function drawPuzzleAndCheckCompletion() {
+                drawPuzzle();
+                if (!puzzleCompleted && puzzleImage && pieces.length > 0 && isPuzzleSolved()) {
+                    completePuzzle();
+                }
+            }
+
             // --- Find piece at coordinates ---
             function findPieceAt(x, y) {
                 for (let i = pieces.length - 1; i >= 0; i--) {
@@ -569,41 +600,7 @@
                 return -1;
             }
 
-            // --- Handle click/tap for swapping ---
-            function handleCanvasClick(e) {
-                e.preventDefault();
-                if (!puzzleImage || pieces.length === 0 || puzzleCompleted) return;
-
-                const { x, y } = getCanvasCoords(e);
-                const clickedIndex = findPieceAt(x, y);
-                
-                if (clickedIndex === -1) return;
-
-                if (selectedIndex === -1) {
-                    // First piece selected
-                    selectedIndex = clickedIndex;
-                    drawPuzzle();
-                } else if (selectedIndex === clickedIndex) {
-                    // Deselect if clicking same piece
-                    selectedIndex = -1;
-                    drawPuzzle();
-                } else {
-                    // Swap the two pieces
-                    const tempDx = pieces[selectedIndex].dx;
-                    const tempDy = pieces[selectedIndex].dy;
-                    
-                    pieces[selectedIndex].dx = pieces[clickedIndex].dx;
-                    pieces[selectedIndex].dy = pieces[clickedIndex].dy;
-                    
-                    pieces[clickedIndex].dx = tempDx;
-                    pieces[clickedIndex].dy = tempDy;
-                    
-                    selectedIndex = -1;
-                    drawPuzzleAndCheckCompletion(); // This will trigger win if solved
-                }
-            }
-
-            // --- Get canvas coordinates from event ---
+            // --- Get canvas coordinates ---
             function getCanvasCoords(e) {
                 const rect = canvas.getBoundingClientRect();
                 const scaleX = canvas.width / rect.width;
@@ -619,6 +616,38 @@
                 const canvasX = (clientX - rect.left) * scaleX;
                 const canvasY = (clientY - rect.top) * scaleY;
                 return { x: Math.max(0, Math.min(canvasX, canvasWidth)), y: Math.max(0, Math.min(canvasY, canvasHeight)) };
+            }
+
+            // --- Handle click/tap for swapping ---
+            function handleCanvasClick(e) {
+                e.preventDefault();
+                if (!puzzleImage || pieces.length === 0 || puzzleCompleted) return;
+
+                const { x, y } = getCanvasCoords(e);
+                const clickedIndex = findPieceAt(x, y);
+                
+                if (clickedIndex === -1) return;
+
+                if (selectedIndex === -1) {
+                    selectedIndex = clickedIndex;
+                    drawPuzzle();
+                } else if (selectedIndex === clickedIndex) {
+                    selectedIndex = -1;
+                    drawPuzzle();
+                } else {
+                    // Swap the two pieces
+                    const tempDx = pieces[selectedIndex].dx;
+                    const tempDy = pieces[selectedIndex].dy;
+                    
+                    pieces[selectedIndex].dx = pieces[clickedIndex].dx;
+                    pieces[selectedIndex].dy = pieces[clickedIndex].dy;
+                    
+                    pieces[clickedIndex].dx = tempDx;
+                    pieces[clickedIndex].dy = tempDy;
+                    
+                    selectedIndex = -1;
+                    drawPuzzleAndCheckCompletion();
+                }
             }
 
             // --- resize handler ---
@@ -672,14 +701,9 @@
                         
                         resizeCanvasToContainer();
                         buildPiecesFromImage();
-                        
-                        // Shuffle to random positions
                         shufflePieces();
-                        
-                        // Start timer only after successful image upload
                         startTimer();
                         
-                        // Ensure popup is hidden
                         popupOverlay.style.visibility = 'hidden';
                         popupOverlay.style.opacity = 0;
                     };
