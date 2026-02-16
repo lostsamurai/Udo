@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>smart grid puzzle · adapts to image</title>
+    <title>smart grid · works with portrait & landscape</title>
     <style>
         * {
             box-sizing: border-box;
@@ -154,14 +154,20 @@
             border: 8px solid #9ac5f0;
             overflow: hidden;
             touch-action: none;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
 
         #puzzleCanvas {
             display: block;
-            width: 100%;
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
             height: auto;
             cursor: pointer;
             background: #bedcff;
+            object-fit: contain;
         }
 
         .info-bar {
@@ -297,7 +303,7 @@
 
         <div class="info-bar">
             <span class="piece-counter" id="pieceCountDisplay">0 pieces</span>
-            <span>✨ grid adapts to image</span>
+            <span>✨ adapts to any orientation</span>
             <button id="solveBtn" class="btn" style="padding: 6px 18px;">⚡ solve</button>
         </div>
         <div class="footer-note">⭐ upload starts timer · tap two pieces to swap</div>
@@ -338,7 +344,7 @@
             let puzzleImage = null;
             let imageNaturalWidth = 0, imageNaturalHeight = 0;
             
-            // Grid dimensions - will be calculated based on image orientation
+            // Grid dimensions
             let COLS = 3;
             let ROWS = 3;
 
@@ -349,7 +355,7 @@
             let puzzleCompleted = false;
 
             const MAX_SCORE = 10000;
-            const TARGET_PIECES = 12; // We want around 12 pieces total
+            const TARGET_PIECES = 12; // Target number of pieces
 
             // --- helper: format time ---
             function formatTime(sec) {
@@ -410,11 +416,11 @@
                 
                 let cols, rows;
                 
-                if (aspectRatio > 1.2) {
+                if (aspectRatio > 1.1) {
                     // Landscape - more columns
                     cols = Math.round(Math.sqrt(TARGET_PIECES * aspectRatio));
                     rows = Math.round(TARGET_PIECES / cols);
-                } else if (aspectRatio < 0.8) {
+                } else if (aspectRatio < 0.9) {
                     // Portrait - more rows
                     rows = Math.round(Math.sqrt(TARGET_PIECES / aspectRatio));
                     cols = Math.round(TARGET_PIECES / rows);
@@ -428,17 +434,52 @@
                 cols = Math.min(6, Math.max(2, cols));
                 rows = Math.min(6, Math.max(2, rows));
                 
+                // Adjust to make total pieces close to TARGET_PIECES
+                while (cols * rows < TARGET_PIECES - 2 && cols < 6 && rows < 6) {
+                    if (aspectRatio > 1) {
+                        cols++;
+                    } else {
+                        rows++;
+                    }
+                }
+                
                 return { cols, rows };
             }
 
-            // --- resize canvas to fit container while maintaining aspect ratio ---
-            function resizeCanvasToContainer() {
+            // --- resize canvas to fit container while maintaining image aspect ratio ---
+            function resizeCanvasToImageAspect() {
+                if (!puzzleImage) return;
+                
                 const container = document.querySelector('.puzzle-container');
                 const containerWidth = container.clientWidth;
-                canvasWidth = Math.min(containerWidth, 900);
-                canvasHeight = Math.min(480, canvasWidth * 0.75);
+                const containerHeight = container.clientHeight;
+                
+                const imageAspect = imageNaturalWidth / imageNaturalHeight;
+                
+                // Calculate canvas dimensions to fit container while preserving aspect ratio
+                let newWidth, newHeight;
+                
+                if (containerWidth / containerHeight > imageAspect) {
+                    // Container is wider than image aspect
+                    newHeight = Math.min(containerHeight, 600);
+                    newWidth = newHeight * imageAspect;
+                } else {
+                    // Container is taller than image aspect
+                    newWidth = Math.min(containerWidth, 900);
+                    newHeight = newWidth / imageAspect;
+                }
+                
+                // Ensure minimum size
+                newWidth = Math.max(300, Math.min(newWidth, 900));
+                newHeight = Math.max(300, Math.min(newHeight, 700));
+                
+                canvasWidth = Math.round(newWidth);
+                canvasHeight = Math.round(newHeight);
+                
                 canvas.width = canvasWidth;
                 canvas.height = canvasHeight;
+                
+                console.log('Canvas resized to:', canvasWidth, 'x', canvasHeight, 'Aspect:', imageAspect);
             }
 
             // --- build pieces from image with dynamic grid ---
@@ -450,6 +491,8 @@
                 const grid = calculateGridDimensions(imageNaturalWidth, imageNaturalHeight);
                 COLS = grid.cols;
                 ROWS = grid.rows;
+                
+                console.log('Grid:', COLS, 'x', ROWS, 'Total:', COLS*ROWS);
                 
                 const pieceSourceWidth = imageNaturalWidth / COLS;
                 const pieceSourceHeight = imageNaturalHeight / ROWS;
@@ -653,25 +696,35 @@
             // --- resize handler ---
             function handleResize() {
                 if (!puzzleImage) {
-                    resizeCanvasToContainer();
+                    // Just set a default size
+                    const container = document.querySelector('.puzzle-container');
+                    canvasWidth = Math.min(container.clientWidth, 600);
+                    canvasHeight = 400;
+                    canvas.width = canvasWidth;
+                    canvas.height = canvasHeight;
                     drawPuzzle();
                     return;
                 }
                 
+                // Store old dimensions for scaling
                 const oldWidth = canvasWidth;
                 const oldHeight = canvasHeight;
                 
-                resizeCanvasToContainer();
+                // Resize canvas to match image aspect ratio
+                resizeCanvasToImageAspect();
                 
-                const scaleX = canvasWidth / oldWidth;
-                const scaleY = canvasHeight / oldHeight;
-                
-                pieces.forEach(p => {
-                    p.dx = p.dx * scaleX;
-                    p.dy = p.dy * scaleY;
-                    p.dw = canvasWidth / COLS;
-                    p.dh = canvasHeight / ROWS;
-                });
+                // Scale piece positions if we have pieces
+                if (pieces.length > 0) {
+                    const scaleX = canvasWidth / oldWidth;
+                    const scaleY = canvasHeight / oldHeight;
+                    
+                    pieces.forEach(p => {
+                        p.dx = p.dx * scaleX;
+                        p.dy = p.dy * scaleY;
+                        p.dw = canvasWidth / COLS;
+                        p.dh = canvasHeight / ROWS;
+                    });
+                }
                 
                 drawPuzzleAndCheckCompletion();
             }
@@ -699,11 +752,21 @@
                         imageNaturalWidth = img.width;
                         imageNaturalHeight = img.height;
                         
-                        resizeCanvasToContainer();
+                        console.log('Image loaded:', imageNaturalWidth, 'x', imageNaturalHeight);
+                        
+                        // Resize canvas to match image aspect ratio
+                        resizeCanvasToImageAspect();
+                        
+                        // Build pieces with adaptive grid
                         buildPiecesFromImage();
+                        
+                        // Shuffle
                         shufflePieces();
+                        
+                        // Start timer
                         startTimer();
                         
+                        // Hide popup
                         popupOverlay.style.visibility = 'hidden';
                         popupOverlay.style.opacity = 0;
                     };
@@ -721,7 +784,13 @@
 
             // --- init ---
             function init() {
-                resizeCanvasToContainer();
+                // Set initial canvas size
+                const container = document.querySelector('.puzzle-container');
+                canvasWidth = Math.min(container.clientWidth, 600);
+                canvasHeight = 400;
+                canvas.width = canvasWidth;
+                canvas.height = canvasHeight;
+                
                 attachCanvasListeners();
                 drawPuzzle();
 
@@ -741,7 +810,9 @@
                     if (puzzleImage) resetToSolved(); 
                 });
                 
-                window.addEventListener('resize', handleResize);
+                window.addEventListener('resize', () => {
+                    setTimeout(handleResize, 100);
+                });
             }
 
             init();
